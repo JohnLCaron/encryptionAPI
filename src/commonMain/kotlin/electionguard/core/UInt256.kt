@@ -1,6 +1,20 @@
 package electionguard.core
 
+import electionguard.core.Base16.fromHex
 import electionguard.core.Base16.toHex
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlin.experimental.xor
 
 /**
@@ -8,6 +22,8 @@ import kotlin.experimental.xor
  * care, because [ByteArray] allows for mutation, and the internal representation is available for
  * external use.
  */
+@Serializable(with = UInt256StringSerializer::class)
+@SerialName("UInt256")
 data class UInt256(val bytes: ByteArray) : CryptoHashableString {
     init {
         require(bytes.size == 32) { "UInt256 must have exactly 32 bytes" }
@@ -79,3 +95,38 @@ fun ElementModQ.toUInt256(): UInt256 = this.byteArray().toUInt256()
 fun ULong.toUInt256(): UInt256 = this.toByteArray().toUInt256()
 fun UInt.toUInt256(): UInt256 = this.toULong().toByteArray().toUInt256()
 fun UShort.toUInt256(): UInt256 = this.toULong().toByteArray().toUInt256()
+
+////////////////////////////////////////////////////////////////////////////////////
+
+/** Custom serializer for [UInt256]. */
+object UInt256StringSerializer : KSerializer<UInt256> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("UInt256", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: UInt256) {
+        val string = value.cryptoHashString()
+        encoder.encodeString(string)
+    }
+
+    override fun deserialize(decoder: Decoder): UInt256 {
+        val string = decoder.decodeString()
+        return UInt256(
+            string.fromHex() ?: throw SerializationException("invalid base16 string")
+        )
+    }
+}
+
+/** Publishes an UInt256 to its external, serializable form. */
+fun UInt256.publish(): UInt256 = UInt256(this.bytes)
+
+/** Publishes an UInt256 to a JSON AST representation. */
+fun UInt256.publishJson(): JsonElement = Json.encodeToJsonElement(this.cryptoHashString())
+
+/** Imports from a published UInt256. Returns `null` if it's out of bounds or malformed.. */
+fun importUInt256(element: JsonElement): UInt256? =
+    try {
+        Json.decodeFromJsonElement<UInt256>(element)
+    } catch (ex: SerializationException) {
+        // should we log this failure somewhere?
+        null
+    }

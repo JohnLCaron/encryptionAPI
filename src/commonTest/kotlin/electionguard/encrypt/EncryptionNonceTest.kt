@@ -1,8 +1,6 @@
 package electionguard.encrypt
 
-import com.github.michaelbull.result.getOrThrow
-import electionguard.ballot.ElectionInitialized
-import electionguard.ballot.Manifest
+import electionguard.ballot.ManifestSimple
 import electionguard.ballot.PlaintextBallot
 import electionguard.core.ElGamalPublicKey
 import electionguard.core.ElementModQ
@@ -10,14 +8,17 @@ import electionguard.core.GroupContext
 import electionguard.core.Nonces
 import electionguard.core.UInt256
 import electionguard.core.decryptWithNonce
+import electionguard.core.elGamalKeypairs
 import electionguard.core.get
 import electionguard.core.getSystemTimeInMillis
 import electionguard.core.hashElements
 import electionguard.core.productionGroup
 import electionguard.core.randomElementModQ
+import electionguard.core.runTest
 import electionguard.core.toElementModQ
+import electionguard.core.uint256s
 import electionguard.input.RandomBallotProvider
-import electionguard.publish.Consumer
+import io.kotest.property.checkAll
 import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,41 +26,44 @@ import kotlin.test.assertNotNull
 
 /** Verify the embedded nonces in an Encrypted Ballot. */
 class EncryptionNonceTest {
-    val input = "src/commonTest/data/runWorkflowAllAvailable"
     val nballots = 11
 
     @Test
     fun testEncryptionNonces() {
-        val group = productionGroup()
-        val consumerIn = Consumer(input, group)
-        val electionInit: ElectionInitialized =
-            consumerIn.readElectionInitialized().getOrThrow { IllegalStateException(it) }
+         runTest {
+             val group = productionGroup()
+             val manifest = generateManifestSimple(2, 5)
+             var iter = 0
+             checkAll(10, elGamalKeypairs(group), uint256s()) { keyPair, qbar ->
 
-        // encrypt
-        val encryptor = Encryptor(
-            group,
-            electionInit.manifest(),
-            ElGamalPublicKey(electionInit.jointPublicKey),
-            electionInit.cryptoExtendedBaseHash
-        )
+                // encrypt
+                val encryptor = EncryptorSimple(
+                    group,
+                    manifest,
+                    keyPair.publicKey,
+                    qbar
+                )
 
-        val starting = getSystemTimeInMillis()
-        RandomBallotProvider(electionInit.manifest(), nballots).ballots().forEach { ballot ->
-            val codeSeed = group.randomElementModQ(minimum = 2)
-            val masterNonce = group.randomElementModQ(minimum = 2)
-            val ciphertextBallot = encryptor.encrypt(ballot, codeSeed, masterNonce, 0)
+                val starting = getSystemTimeInMillis()
+                RandomBallotProvider(manifest, nballots).ballots().forEach { ballot ->
+                    val codeSeed = group.randomElementModQ(minimum = 2)
+                    val masterNonce = group.randomElementModQ(minimum = 2)
+                    val ciphertextBallot = encryptor.encrypt(ballot, codeSeed, masterNonce, 0)
 
-            // decrypt with nonces
-            val decryptionWithNonce = VerifyEmbeddedNonces(group, electionInit.manifest(), electionInit.jointPublicKey())
-            val decryptedBallot = with (decryptionWithNonce) { ciphertextBallot.decrypt() }
-            assertNotNull(decryptedBallot)
+                    // decrypt with nonces
+                    val decryptionWithNonce = VerifyEmbeddedNonces(group, manifest, keyPair.publicKey)
+                    val decryptedBallot = with(decryptionWithNonce) { ciphertextBallot.decrypt() }
+                    assertNotNull(decryptedBallot)
 
-            compareBallots(ballot, decryptedBallot)
+                    compareBallots(ballot, decryptedBallot)
+                }
+
+                val took = getSystemTimeInMillis() - starting
+                val msecsPerBallot = (took.toDouble() / nballots).roundToInt()
+                 iter++
+                println("$iter testEncryptionNonces $nballots took $took millisecs for $nballots ballots = $msecsPerBallot msecs/ballot")
+            }
         }
-
-        val took = getSystemTimeInMillis() - starting
-        val msecsPerBallot = (took.toDouble() / nballots).roundToInt()
-        println("testEncryptionNonces $nballots took $took millisecs for $nballots ballots = $msecsPerBallot msecs/ballot")
     }
 }
 
@@ -97,14 +101,14 @@ fun compareBallots(ballot: PlaintextBallot, decryptedBallot: PlaintextBallot) {
 }
 
 // create our own class (instead of DecryptionWithEmbeddedNonces) in order to validate the embedded nonces
-class VerifyEmbeddedNonces(val group : GroupContext, val manifest: Manifest, val publicKey: ElGamalPublicKey) {
+class VerifyEmbeddedNonces(val group: GroupContext, val manifest: ManifestSimple, val publicKey: ElGamalPublicKey) {
 
     fun CiphertextBallot.decrypt(): PlaintextBallot {
         val ballotNonce: UInt256 = hashElements(manifest.cryptoHash, this.ballotId, this.masterNonce)
 
         val plaintext_contests = mutableListOf<PlaintextBallot.Contest>()
         for (contest in this.contests) {
-            val mcontest = manifest.contests.find { it.contestId == contest.contestId}
+            val mcontest = manifest.contests.find { it.contestId == contest.contestId }
             assertNotNull(mcontest)
             val plaintextContest = verifyContestNonces(mcontest, ballotNonce, contest)
             assertNotNull(plaintextContest)
@@ -119,7 +123,7 @@ class VerifyEmbeddedNonces(val group : GroupContext, val manifest: Manifest, val
     }
 
     private fun verifyContestNonces(
-        mcontest: Manifest.ContestDescription,
+        mcontest: ManifestSimple.ContestSimple,
         ballotNonce: UInt256,
         contest: CiphertextBallot.Contest
     ): PlaintextBallot.Contest {
@@ -147,7 +151,7 @@ class VerifyEmbeddedNonces(val group : GroupContext, val manifest: Manifest, val
     }
 
     private fun verifySelectionNonces(
-        mselection: Manifest.SelectionDescription,
+        mselection: ManifestSimple.SelectionSimple,
         contestNonce: ElementModQ,
         selection: CiphertextBallot.Selection
     ): PlaintextBallot.Selection? {

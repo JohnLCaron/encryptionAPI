@@ -6,10 +6,10 @@ buildscript {
 }
 
 plugins {
-    kotlin("multiplatform") version "1.7.20-Beta"
+    kotlin("multiplatform") version "1.7.20"
 
     // cross-platform serialization support
-    kotlin("plugin.serialization") version "1.7.20-Beta"
+    kotlin("plugin.serialization") version "1.7.20"
 
     // https://github.com/hovinen/kotlin-auto-formatter
     // Creates a `formatKotlin` Gradle action that seems to be reliable.
@@ -21,11 +21,10 @@ plugins {
     application
 }
 
-group = "electionguard-kotlin-multiplatform"
+group = "electionguard-kotlin-jsonEncryption"
 version = "1.0-SNAPSHOT"
 
-val kotlinVersion by extra("1.7.20-Beta")
-val pbandkVersion by extra("0.14.1")
+val kotlinVersion by extra("1.7.20")
 
 repositories {
     google()
@@ -78,9 +77,6 @@ kotlin {
         }
 
         binaries {
-            executable("RunBatchEncryption") {
-                entryPoint = "electionguard.encrypt.main"
-            }
             sharedLib() {
                 baseName = "ekm" // on Linux and macOS
                 // baseName = "libekm // on Windows
@@ -98,13 +94,13 @@ kotlin {
                     implementation(kotlin("stdlib", kotlinVersion))
 
                     // JSON serialization and DSL
-                    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.3")
+                    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.4.0")
 
                     // Coroutines
                     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.3")
 
                     // Useful, portable routines
-                    implementation("io.ktor:ktor-utils:2.0.3")
+                    // implementation("io.ktor:ktor-utils:2.0.3")
 
                     // Portable logging interface. On the JVM, we'll get "logback", which gives
                     // us lots of features. On Native, it ultimately just prints to stdout.
@@ -113,9 +109,6 @@ kotlin {
 
                     // A multiplatform Kotlin library for working with date and time.
                     implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.4.0")
-
-                    // A multiplatform Kotlin library for working with protobuf.
-                    implementation("pro.streem.pbandk:pbandk-runtime:$pbandkVersion")
 
                     // A multiplatform Kotlin library for command-line parsing (could use enableEndorsedLibs instead)
                     implementation("org.jetbrains.kotlinx:kotlinx-cli:0.3.5")
@@ -143,7 +136,7 @@ kotlin {
                     implementation(kotlin("stdlib-jdk8", kotlinVersion))
 
                     // Progress bars
-                    implementation("me.tongfei:progressbar:0.9.3")
+                    // implementation("me.tongfei:progressbar:0.9.3")
 
                     // Logging implementation (used by "kotlin-logging"). Note that we need
                     // a bleeding-edge implementation to ensure we don't have vulnerabilities
@@ -163,28 +156,6 @@ kotlin {
         val nativeTest by getting { dependencies {} }
     }
 }
-
-val protoGenSource by
-    extra("build/generated/source/proto")
-
-val compileProtobuf =
-    tasks.register("compileProtobuf") {
-        doLast {
-            print("* Compiling protobuf *\n")
-            /* project.exec {
-             *        commandLine = "rm -f ./src/commonMain/kotlin/electionguard/protogen".split("
-             * ")
-             * } */
-            // TODO lame
-            val commandLineStr =
-                "protoc --pbandk_out=./src/commonMain/kotlin/ --proto_path=./src/commonMain/proto " +
-                    "common.proto encrypted_ballot.proto encrypted_tally.proto " +
-                    "election_record.proto manifest.proto " +
-                    "plaintext_ballot.proto plaintext_tally.proto " +
-                    "trustees.proto"
-            project.exec { commandLine = commandLineStr.split(" ") }
-        }
-    }
 
 tasks.register("libhaclBuild") {
     doLast {
@@ -227,20 +198,3 @@ configurations.forEach {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>()
     .configureEach { kotlinOptions.freeCompilerArgs += "-opt-in=kotlin.RequiresOptIn" }
 
-publishing {
-    repositories {
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/danwallach/electionguard-kotlin-multiplatform")
-            credentials {
-                username = project.findProperty("github.user") as String? ?: System.getenv("USERNAME")
-                password = project.findProperty("github.key") as String? ?: System.getenv("TOKEN")
-            }
-        }
-    }
-    publications {
-        register<MavenPublication>("gpr") {
-            from(components["java"])
-        }
-    }
-}
