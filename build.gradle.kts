@@ -78,8 +78,8 @@ kotlin {
 
         binaries {
             sharedLib() {
-                baseName = "ekm" // on Linux and macOS
-                // baseName = "libekm // on Windows
+                // baseName = "ekm" // on Linux and macOS
+                baseName = "libekm" // on Windows
             }
         }
     }

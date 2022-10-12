@@ -64,6 +64,7 @@ class EncryptorSimple(
         masterNonce: ElementModQ,
         timestampOverride: Long? = null // if null, use getSystemTimeInMillis()
     ): CiphertextBallot {
+        println("check encrypt")
         return ballot.encryptBallot(codeSeed, masterNonce, timestampOverride)
     }
 
@@ -72,22 +73,28 @@ class EncryptorSimple(
         masterNonce: ElementModQ, // random
         timestampOverride: Long? = null,
     ): CiphertextBallot {
+        println("chek encryptBallot")
         val ballotNonce: UInt256 = hashElements(manifest.cryptoHash, this.ballotId, masterNonce)
         val plaintextContests = this.contests.associateBy { it.contestId }
+        println("chek 1")
 
         val encryptedContests = mutableListOf<CiphertextBallot.Contest>()
         for (mcontest in manifest.contests) {
+            println(" contest ${mcontest.contestId}")
             // If no contest on the ballot, create a placeholder
             val pcontest: PlaintextBallot.Contest = plaintextContests[mcontest.contestId] ?: contestFrom(mcontest)
             encryptedContests.add(pcontest.encryptContest(mcontest, ballotNonce))
+            println(" contest ${mcontest.contestId} done")
         }
         val sortedContests = encryptedContests.sortedBy { it.sequenceOrder }
+        println("chek 2")
 
         // arbitrary choice about how to calculate Hi, the trackingCode (aka confirmation code), and Bi
         // may not be spec compliant
         val timestamp = timestampOverride ?: (getSystemTimeInMillis() / 1000)
         val cryptoHash = hashElements(ballotId, manifest.cryptoHash, sortedContests) // B_i
         val trackingCode = hashElements(codeSeed, timestamp, cryptoHash)
+        println("chek 3")
 
         return CiphertextBallot(
             ballotId,
@@ -103,6 +110,7 @@ class EncryptorSimple(
     }
 
     private fun contestFrom(mcontest: ManifestSimple.ContestSimple): PlaintextBallot.Contest {
+        println(" contestFrom ${mcontest.contestId}")
         val selections = mcontest.selections.map { selectionFrom(it.selectionId, it.sequenceOrder, false) }
         return PlaintextBallot.Contest(mcontest.contestId, mcontest.sequenceOrder, selections)
     }
@@ -124,10 +132,12 @@ class EncryptorSimple(
 
         val encryptedSelections = mutableListOf<CiphertextBallot.Selection>()
         val plaintextSelections = this.selections.associateBy { it.selectionId }
+        println(" encrypyContest check1")
 
         // only use selections that match the manifest.
         var votes = 0
         for (mselection: ManifestSimple.SelectionSimple in mcontest.selections) {
+            println("  select ${mselection.selectionId}")
 
             //Find the actual selection matching the contest description.
             val plaintextSelection = plaintextSelections[mselection.selectionId] ?:
@@ -142,7 +152,9 @@ class EncryptorSimple(
                 false,
             )
             encryptedSelections.add(encryptedSelection)
+            println("  select ${mselection.selectionId} done")
         }
+        println(" encrypyContest check2")
 
         // Add a placeholder selection for each possible vote in the contest
         val limit = mcontest.votesAllowed
@@ -167,6 +179,7 @@ class EncryptorSimple(
             votes++
         }
 
+        println(" encrypyContest check3")
         return mcontest.encryptContest(
             group,
             elgamalPublicKey,
